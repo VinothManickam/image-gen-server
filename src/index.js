@@ -11,8 +11,9 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(helmet());
-app.use(cors({ origin: 'https://image-gen-client.onrender.com' }));
-app.use(express.json());
+app.use(cors({
+  origin: ['https://image-gen-client.onrender.com', 'http://localhost:3000']
+}));app.use(express.json());
 app.use(rateLimit);
 
 app.use('/api/generate', generateRouter);
