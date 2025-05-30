@@ -1,49 +1,37 @@
 const axios = require('axios');
 
-const generateImage = async (prompt, ws) => {
+async function generateImage(prompt) {
   const apiKey = process.env.STABLE_HORDE_API_KEY;
-
-  // Submit the generation request
-  const submitResponse = await axios.post(
-    'https://stablehorde.net/api/v2/generate/async',
-    { prompt },
-    { headers: { 'Content-Type': 'application/json', apikey: apiKey } }
-  );
-
-  const { id } = submitResponse.data;
-
-  // Poll the status
-  let attempts = 0;
-  const maxAttempts = 60;
-  while (attempts < maxAttempts) {
-    const statusResponse = await axios.get(
-      `https://stablehorde.net/api/v2/generate/status/${id}`,
-      { headers: { apikey: apiKey } }
+  try {
+    const response = await axios.post(
+      'https://stablehorde.net/api/v2/generate/async',
+      {
+        prompt,
+        params: { n: 1, width: 512, height: 512 },
+      },
+      { headers: { apikey: apiKey } },
     );
 
-    const status = statusResponse.data;
-    ws.send(JSON.stringify({
-      status: 'progress',
-      queue_position: status.queue_position,
-      wait_time: status.wait_time,
-    }));
+    const { id, queue_position } = response.data;
 
-    if (status.done) {
-      if (status.faulted) {
-        ws.send(JSON.stringify({ status: 'error', message: 'Image generation failed' }));
-        return { success: false, error: 'Image generation failed' };
+    for (let i = 0; i < 30; i++) {
+      const status = await axios.get(
+        `https://stablehorde.net/api/v2/generate/status/${id}`,
+        { headers: { apikey: apiKey } },
+      );
+      if (status.data.done && status.data.generations?.[0]?.img) {
+        return { success: true, imageUrl: status.data.generations[0].img };
       }
-      const imageUrl = status.generations[0]?.url;
-      ws.send(JSON.stringify({ status: 'success', imageUrl }));
-      return { success: true, imageUrl };
+      if (status.data.queue_position) {
+        return { success: false, queue_position: status.data.queue_position };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    return { success: false, queue_position };
+  } catch (error) {
+    throw new Error('Stable Horde API error');
   }
-
-  ws.send(JSON.stringify({ status: 'error', message: 'Image generation timed out' }));
-  return { success: false, error: 'Image generation timed out' };
-};
+}
 
 module.exports = { generateImage };
