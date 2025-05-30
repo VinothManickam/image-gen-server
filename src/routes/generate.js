@@ -13,8 +13,9 @@ router.post('/', validatePrompt, async (req, res) => {
       res.json({ imageUrl: result.imageUrl });
     } else {
       res.status(429).json({
-        message: 'Image generation in progress or failed',
+        message: 'Image generation in progress or rate-limited',
         queue_position: result.queue_position,
+        retryAfter: result.retryAfter || 60,
       });
     }
   } catch (error) {
