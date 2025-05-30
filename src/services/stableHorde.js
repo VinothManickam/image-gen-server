@@ -1,37 +1,40 @@
 const axios = require('axios');
 
-async function generateImage(prompt) {
+const generateImage = async (prompt) => {
   const apiKey = process.env.STABLE_HORDE_API_KEY;
-  try {
-    const response = await axios.post(
-      'https://stablehorde.net/api/v2/generate/async',
-      {
-        prompt,
-        params: { n: 1, width: 512, height: 512 },
-      },
-      { headers: { apikey: apiKey } },
+
+  // Submit the generation request
+  const submitResponse = await axios.post(
+    'https://stablehorde.net/api/v2/generate/async',
+    { prompt },
+    { headers: { 'Content-Type': 'application/json', apikey: apiKey } }
+  );
+
+  const { id } = submitResponse.data;
+
+  // Poll the status
+  let attempts = 0;
+  const maxAttempts = 60; // Poll for up to 10 minutes (60 * 10 seconds)
+  while (attempts < maxAttempts) {
+    const statusResponse = await axios.get(
+      `https://stablehorde.net/api/v2/generate/status/${id}`,
+      { headers: { apikey: apiKey } }
     );
 
-    const { id, queue_position } = response.data;
-
-    for (let i = 0; i < 30; i++) {
-      const status = await axios.get(
-        `https://stablehorde.net/api/v2/generate/status/${id}`,
-        { headers: { apikey: apiKey } },
-      );
-      if (status.data.done && status.data.generations?.[0]?.img) {
-        return { success: true, imageUrl: status.data.generations[0].img };
+    const status = statusResponse.data;
+    if (status.done) {
+      if (status.faulted) {
+        return { success: false, error: 'Image generation failed' };
       }
-      if (status.data.queue_position) {
-        return { success: false, queue_position: status.data.queue_position };
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return { success: true, imageUrl: status.generations[0]?.url }; // Adjust based on actual response
     }
 
-    return { success: false, queue_position };
-  } catch (error) {
-    throw new Error('Stable Horde API error');
+    // Wait before polling again
+    await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
+    attempts++;
   }
-}
+
+  return { success: false, error: 'Image generation timed out' };
+};
 
 module.exports = { generateImage };
