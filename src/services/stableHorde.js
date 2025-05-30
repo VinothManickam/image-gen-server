@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const generateImage = async (prompt) => {
+const generateImage = async (prompt, ws) => {
   const apiKey = process.env.STABLE_HORDE_API_KEY;
 
   // Submit the generation request
@@ -14,7 +14,7 @@ const generateImage = async (prompt) => {
 
   // Poll the status
   let attempts = 0;
-  const maxAttempts = 60; // Poll for up to 10 minutes (60 * 10 seconds)
+  const maxAttempts = 60;
   while (attempts < maxAttempts) {
     const statusResponse = await axios.get(
       `https://stablehorde.net/api/v2/generate/status/${id}`,
@@ -22,18 +22,27 @@ const generateImage = async (prompt) => {
     );
 
     const status = statusResponse.data;
+    ws.send(JSON.stringify({
+      status: 'progress',
+      queue_position: status.queue_position,
+      wait_time: status.wait_time,
+    }));
+
     if (status.done) {
       if (status.faulted) {
+        ws.send(JSON.stringify({ status: 'error', message: 'Image generation failed' }));
         return { success: false, error: 'Image generation failed' };
       }
-      return { success: true, imageUrl: status.generations[0]?.url }; // Adjust based on actual response
+      const imageUrl = status.generations[0]?.url;
+      ws.send(JSON.stringify({ status: 'success', imageUrl }));
+      return { success: true, imageUrl };
     }
 
-    // Wait before polling again
-    await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
+    await new Promise((resolve) => setTimeout(resolve, 10000));
     attempts++;
   }
 
+  ws.send(JSON.stringify({ status: 'error', message: 'Image generation timed out' }));
   return { success: false, error: 'Image generation timed out' };
 };
 
